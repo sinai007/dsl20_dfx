@@ -3,6 +3,13 @@
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
+#include "CabIR.h"
+#include "WavLoader.h"
+// #include "ir.h"
+
+CabIR  cab;
+WavLoader loader;
+AudioFilterStateVariable cabFilter;        //xy=937.1429100036621,304.2856788635254
 
 // GUItool: begin automatically generated code
 AudioInputI2S            input;           //xy=70.28570938110352,561.4285545349121
@@ -17,10 +24,18 @@ AudioAnalyzePeak         reverb_peak;          //xy=1262.8571428571427,388.57142
 AudioMixer4              effectsMix;         //xy=1403.7142639160156,522.8570976257324
 AudioOutputI2S           output;           //xy=1605.7143440246582,522.8571166992188
 AudioAnalyzePeak         output_peak; //xy=1611.4286346435547,628.5714435577393
-AudioConnection          patchCord1(input, 0, effectsMix, 3);
-AudioConnection          patchCord2(input, 0, delayMix, 3);
-AudioConnection          patchCord3(input, 0, delayEffect, 0);
+
+AudioConnection          patchCord0(input, 0, cab, 0);
+AudioConnection          patchCord01(input, 0, cab, 1);
+AudioConnection          patchCord02(cab, 0, cabFilter, 0);
+AudioConnection          patchCord1(cabFilter, 0, effectsMix, 3);
+AudioConnection          patchCord2(cabFilter, 0, delayMix, 3);
+AudioConnection          patchCord3(cabFilter, 0, delayEffect, 0);
+// AudioConnection          patchCord1(input, 0, effectsMix, 3);
+// AudioConnection          patchCord2(input, 0, delayMix, 3);
+// AudioConnection          patchCord3(input, 0, delayEffect, 3);
 AudioConnection          patchCord4(input, 0, input_peak, 0);
+
 AudioConnection          patchCord5(delayEffect, 0, delayMix, 0);
 AudioConnection          patchCord6(delayEffect, 1, delayMix, 1);
 AudioConnection          patchCord7(delayEffect, 2, delayMix, 2);
@@ -36,12 +51,8 @@ AudioConnection          patchCord16(effectsMix, 0, output, 1);
 AudioConnection          patchCord17(effectsMix, output_peak);
 // GUItool: end automatically generated code
 
-AudioControlSGTL5000     sgtl5000_1;
 
-// Use these with the Teensy Audio Shield
-#define SDCARD_CS_PIN    10
-#define SDCARD_MOSI_PIN  7   // Teensy 4 ignores this, uses pin 11
-#define SDCARD_SCK_PIN   14  // Teensy 4 ignores this, uses pin 13
+AudioControlSGTL5000     sgtl5000_1;
 
 
 float delay_time = 450;
@@ -54,17 +65,38 @@ float effects_mix = 0.25;
 
 float lpf = 2000;
 
-float dial = 0.3;
+float dial = 0.8;
+
+// Cabinet Parameters ----------------------------------------------------------
+const int nc = 17920; // number of taps for the FIR filter 
+float32_t DMAMEM maskgen[FFT_L * 2];            
+float32_t DMAMEM  fftout[nfor][512];  // nfor should not exceed 140
+
+float32_t irBuffer[17920];
+// END Cabinet Parameters ----------------------------------------------------------
+
+
+void enable_headphones() {
+  sgtl5000_1.muteLineout();
+  sgtl5000_1.muteHeadphone();
+  sgtl5000_1.audioPostProcessorEnable();
+  sgtl5000_1.surroundSoundEnable();
+  sgtl5000_1.surroundSound(2, 7);
+  sgtl5000_1.unmuteHeadphone();
+}
 
 void setup() {
-  Serial.begin(9600);
 
-  // Audio connections require memory to work.  For more
-  // detailed information, see the MemoryAndCpuUsage example
+  Serial.begin(9600);
   AudioMemory(700);
 
   sgtl5000_1.enable();
   sgtl5000_1.volume(0.5);
+  enable_headphones();
+  
+  // loader.as_samples("M25i.wav", 0, irBuffer, 17920);
+  loader.as_samples("T75.wav", 0, irBuffer, 17920);
+  // loader.raw("T75.raw", irBuffer, 17920);
 
   if(dial < 0.5) {
     delay_feedback = 0;
@@ -76,18 +108,23 @@ void setup() {
   }
 
   set_parameters();
+
+  cab.begin(0,.250,*fftout,nfor); // turn off update routine until after filter mask is generated, set Audio_gain=1.00 , point to fftout array, specify number of partitions
+  cab.impulse(irBuffer, maskgen,nc);
+  cab.bypass(false);
 }
 
 void set_parameters() {
 
+  // set delay effects
   delayEffect.delay(0, delay_time);
   delayEffect.delay(1, delay_time*2);
   delayEffect.delay(2, delay_time*3);
 
-  // delayEffect.delay(2, 600);
-
+  // set reverb effects
   reverb.damping(reverb_damping);
   reverb.roomsize(reverb_size);
+  
   // 100% Wet Reverb
   reverbMix.gain(0, reverb_mix);
   reverbMix.gain(1, 1-reverb_mix);
@@ -102,39 +139,33 @@ void set_parameters() {
   effectsMix.gain(0, effects_mix);
   effectsMix.gain(1, 1 - effects_mix);
 
+  // Filter out the fizzies
   filter.frequency(lpf);
+  cabFilter.frequency(5000);
 }
 
 void process()
 {
    delay(5000);
    set_parameters();
-   
-    Serial.print("Max CPU Usage=");
-    Serial.print(AudioProcessorUsageMax());
-    Serial.print("%; Max Mem Usage=");
-    Serial.print(AudioMemoryUsageMax());        
-    Serial.print(" blks; input_peak=");
-    Serial.print(input_peak.read());
-    Serial.print("; output_peak=");
-    Serial.print(output_peak.read());
-    Serial.print("; delay_peak=");
-    Serial.print(delay_peak.read());    
-    Serial.print("; reverb_peak=");
-    Serial.println(reverb_peak.read());    
-    // Serial.print(AudioMemoryUsageMax());    
-    // Serial.println(" blks");
 
-    // Serial.print("Reverb=");
-    // Serial.print(reverb_mix);
-    // Serial.print("; delay_feedback");
-    // Serial.print(delay_feedback);
-    // Serial.print("; effects_mix");    
-    // Serial.println(effects_mix);
+  Serial.print("Current CPU Usage=");
+  Serial.print(AudioProcessorUsage());   
+  Serial.print("%; Max CPU Usage=");
+  Serial.print(AudioProcessorUsageMax());
+  Serial.print("%; Max Mem Usage=");
+  Serial.print(AudioMemoryUsageMax());        
+  Serial.print(" blks; input_peak=");
+  Serial.print(input_peak.read());
+  Serial.print("; output_peak=");
+  Serial.print(output_peak.read());
+  Serial.print("; delay_peak=");
+  Serial.print(delay_peak.read());    
+  Serial.print("; reverb_peak=");
+  Serial.println(reverb_peak.read());    
 }
 
 
 void loop() {
   process();
-  // playFile("GUITAR.WAV");  // filenames are always uppercase 8.3 format
 }
