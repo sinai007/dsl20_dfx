@@ -24,6 +24,7 @@ AudioAnalyzePeak         reverb_peak;          //xy=1262.8571428571427,388.57142
 AudioMixer4              effectsMix;         //xy=1403.7142639160156,522.8570976257324
 AudioOutputI2S           output;           //xy=1605.7143440246582,522.8571166992188
 AudioAnalyzePeak         output_peak; //xy=1611.4286346435547,628.5714435577393
+AudioAnalyzePeak         cab_peak;          //xy=1262.8571428571427,388.57142857142856
 
 AudioConnection          patchCord0(input, 0, cab, 0);
 AudioConnection          patchCord01(input, 0, cab, 1);
@@ -50,6 +51,7 @@ AudioConnection          patchCord15(effectsMix, 0, output, 0);
 AudioConnection          patchCord16(effectsMix, 0, output, 1);
 AudioConnection          patchCord17(effectsMix, output_peak);
 // GUItool: end automatically generated code
+AudioConnection pacthCord18(cab, 0, cab_peak, 0);
 
 
 AudioControlSGTL5000     sgtl5000_1;
@@ -68,7 +70,12 @@ float lpf = 2000;
 float dial = 0.8;
 
 // Cabinet Parameters ----------------------------------------------------------
+#define partitionsize 128
+
 const int nc = 17920; // number of taps for the FIR filter 
+const int PROGMEM nfor = nc / partitionsize; // number of partition blocks --> nfor = nc / partitionsize       ** nfor should not be greater than 140
+const uint32_t PROGMEM FFT_L = 2 * partitionsize; 
+
 float32_t DMAMEM maskgen[FFT_L * 2];            
 float32_t DMAMEM  fftout[nfor][512];  // nfor should not exceed 140
 
@@ -98,23 +105,30 @@ void setup() {
   loader.as_samples("T75.wav", 0, irBuffer, 17920);
   // loader.raw("T75.raw", irBuffer, 17920);
 
-  if(dial < 0.5) {
-    delay_feedback = 0;
-    effects_mix = dial / 2;
-  } else {
-    delay_feedback = dial - 0.25;
-    reverb_mix = 0.5;
-    effects_mix = (dial - 0.5);
-  }
-
   set_parameters();
 
-  cab.begin(0,.250,*fftout,nfor); // turn off update routine until after filter mask is generated, set Audio_gain=1.00 , point to fftout array, specify number of partitions
+  cab.begin(0,.125,*fftout,nfor); // turn off update routine until after filter mask is generated, set Audio_gain=1.00 , point to fftout array, specify number of partitions
   cab.impulse(irBuffer, maskgen,nc);
   cab.bypass(false);
 }
 
 void set_parameters() {
+
+  if(dial < 0.1) {
+    effects_mix = 0;
+  } else if(dial < 0.5) {
+    delay_feedback = 0;
+    effects_mix = dial;
+    reverb_mix = .5;
+    reverb_size = .5 + dial;
+    reverb_damping = 1 - dial;
+  } else {
+    delay_feedback = dial - 0.25;
+    reverb_mix = 0.5;
+    reverb_damping =  0.25;
+    reverb_size = 0.75;
+    effects_mix = 0.5;// (dial - 0.5);
+  }
 
   // set delay effects
   delayEffect.delay(0, delay_time);
@@ -137,7 +151,7 @@ void set_parameters() {
   
   // 50/50 Wet/Dry
   effectsMix.gain(0, effects_mix);
-  effectsMix.gain(1, 1 - effects_mix);
+  // effectsMix.gain(1, 1 - effects_mix);
 
   // Filter out the fizzies
   filter.frequency(lpf);
@@ -146,23 +160,35 @@ void set_parameters() {
 
 void process()
 {
-   delay(5000);
-   set_parameters();
+   delay(1000);
 
-  Serial.print("Current CPU Usage=");
-  Serial.print(AudioProcessorUsage());   
-  Serial.print("%; Max CPU Usage=");
-  Serial.print(AudioProcessorUsageMax());
-  Serial.print("%; Max Mem Usage=");
-  Serial.print(AudioMemoryUsageMax());        
-  Serial.print(" blks; input_peak=");
-  Serial.print(input_peak.read());
-  Serial.print("; output_peak=");
-  Serial.print(output_peak.read());
-  Serial.print("; delay_peak=");
-  Serial.print(delay_peak.read());    
-  Serial.print("; reverb_peak=");
-  Serial.println(reverb_peak.read());    
+  int v = analogRead(A1);
+  Serial.printf("Pot: %d\n", v);
+
+  dial = v / 1023.0;
+  set_parameters();
+
+  Serial.printf("Input Peak: %f, Cab Peak: %f, Ouput Peak: %f, Delay Peak: %f, Reverb Peak: %f\n", 
+    input_peak.read(),
+    cab_peak.read(),
+    output_peak.read(),
+    delay_peak.read(),
+    reverb_peak.read());
+  
+  // Serial.print("Current CPU Usage=");
+  // Serial.print(AudioProcessorUsage());   
+  // Serial.print("%; Max CPU Usage=");
+  // Serial.print(AudioProcessorUsageMax());
+  // Serial.print("%; Max Mem Usage=");
+  // Serial.print(AudioMemoryUsageMax());        
+  // Serial.print(" blks; input_peak=");
+  // Serial.print(input_peak.read());
+  // Serial.print("; output_peak=");
+  // Serial.print(output_peak.read());
+  // Serial.print("; delay_peak=");
+  // Serial.print(delay_peak.read());    
+  // Serial.print("; reverb_peak=");
+  // Serial.println(reverb_peak.read());    
 }
 
 
