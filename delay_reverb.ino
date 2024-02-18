@@ -5,6 +5,8 @@
 #include <SerialFlash.h>
 #include "CabIR.h"
 #include "WavLoader.h"
+#include "ToggleButton.h"
+
 // #include "ir.h"
 
 CabIR  cab;
@@ -65,9 +67,15 @@ float reverb_size = 0.5;
 float reverb_mix = 0.5;
 float effects_mix = 0.25;
 
-float lpf = 2000;
+float lpf = 2500;
 
 float dial = 0.8;
+
+#define CHANNEL_SWITCH 32
+#define CAB_SWITCH 31
+
+ToggleButton channelSwitch = ToggleButton( "Channel", CHANNEL_SWITCH); 
+ToggleButton cabSwitch = ToggleButton( "Cab", CAB_SWITCH); 
 
 // Cabinet Parameters ----------------------------------------------------------
 #define partitionsize 128
@@ -82,7 +90,6 @@ float32_t DMAMEM  fftout[nfor][512];  // nfor should not exceed 140
 float32_t irBuffer[17920];
 // END Cabinet Parameters ----------------------------------------------------------
 
-
 void enable_headphones() {
   sgtl5000_1.muteLineout();
   sgtl5000_1.muteHeadphone();
@@ -92,6 +99,16 @@ void enable_headphones() {
   sgtl5000_1.unmuteHeadphone();
 }
 
+void toggleCab() {
+  cab.toggleBypass();
+  Serial.printf("Cab Switched: %d\n", cabSwitch.buttonState);
+
+}
+
+void toggleChannel() {
+
+  Serial.printf("Channel Switched: %d\n", channelSwitch.buttonState);
+}
 void setup() {
 
   Serial.begin(9600);
@@ -101,13 +118,16 @@ void setup() {
   sgtl5000_1.volume(0.5);
   enable_headphones();
   
+  channelSwitch.setup();
+  cabSwitch.setup();
+
   // loader.as_samples("M25i.wav", 0, irBuffer, 17920);
-  loader.as_samples("T75.wav", 0, irBuffer, 17920);
+  loader.as_samples("M25.wav", 0, irBuffer, 17920);
   // loader.raw("T75.raw", irBuffer, 17920);
 
   set_parameters();
 
-  cab.begin(0,.125,*fftout,nfor); // turn off update routine until after filter mask is generated, set Audio_gain=1.00 , point to fftout array, specify number of partitions
+  cab.begin(0,.15,*fftout,nfor); // turn off update routine until after filter mask is generated, set Audio_gain=1.00 , point to fftout array, specify number of partitions
   cab.impulse(irBuffer, maskgen,nc);
   cab.bypass(false);
 }
@@ -160,35 +180,22 @@ void set_parameters() {
 
 void process()
 {
-   delay(1000);
-
+  channelSwitch.update(&toggleChannel);
+  cabSwitch.update(&toggleCab);
+ 
   int v = analogRead(A1);
-  Serial.printf("Pot: %d\n", v);
-
   dial = v / 1023.0;
-  set_parameters();
 
-  Serial.printf("Input Peak: %f, Cab Peak: %f, Ouput Peak: %f, Delay Peak: %f, Reverb Peak: %f\n", 
-    input_peak.read(),
-    cab_peak.read(),
-    output_peak.read(),
-    delay_peak.read(),
-    reverb_peak.read());
-  
-  // Serial.print("Current CPU Usage=");
-  // Serial.print(AudioProcessorUsage());   
-  // Serial.print("%; Max CPU Usage=");
-  // Serial.print(AudioProcessorUsageMax());
-  // Serial.print("%; Max Mem Usage=");
-  // Serial.print(AudioMemoryUsageMax());        
-  // Serial.print(" blks; input_peak=");
-  // Serial.print(input_peak.read());
-  // Serial.print("; output_peak=");
-  // Serial.print(output_peak.read());
-  // Serial.print("; delay_peak=");
-  // Serial.print(delay_peak.read());    
-  // Serial.print("; reverb_peak=");
-  // Serial.println(reverb_peak.read());    
+  set_parameters();
+     
+  //   Serial.printf("Input Peak: %f, Cab Peak: %f, Ouput Peak: %f, Delay Peak: %f, Reverb Peak: %f\n", 
+  //   input_peak.read(),
+  //   cab_peak.read(),
+  //   output_peak.read(),
+  //   delay_peak.read(),
+  //   reverb_peak.read());
+  //   delay(500);
+  // }
 }
 
 
