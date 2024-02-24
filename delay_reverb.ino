@@ -73,6 +73,10 @@ float dial = 0.8;
 
 #define CHANNEL_SWITCH 32
 #define CAB_SWITCH 31
+#define REVERB_LEVEL A1
+#define CLEAN_CHANNEL 33
+#define ULTRA_CHANNEL 34
+
 
 ToggleButton channelSwitch = ToggleButton( "Channel", CHANNEL_SWITCH); 
 ToggleButton cabSwitch = ToggleButton( "Cab", CAB_SWITCH); 
@@ -102,13 +106,14 @@ void enable_headphones() {
 void toggleCab() {
   cab.toggleBypass();
   Serial.printf("Cab Switched: %d\n", cabSwitch.buttonState);
-
 }
 
 void toggleChannel() {
-
   Serial.printf("Channel Switched: %d\n", channelSwitch.buttonState);
+  digitalToggle(CLEAN_CHANNEL);
+  digitalToggle(ULTRA_CHANNEL);
 }
+  
 void setup() {
 
   Serial.begin(9600);
@@ -118,6 +123,12 @@ void setup() {
   sgtl5000_1.volume(0.5);
   enable_headphones();
   
+  pinMode(CLEAN_CHANNEL, OUTPUT);
+  pinMode(ULTRA_CHANNEL, OUTPUT);
+
+  digitalWrite(ULTRA_CHANNEL, HIGH);
+  digitalWrite(CLEAN_CHANNEL, LOW);
+
   channelSwitch.setup();
   cabSwitch.setup();
 
@@ -183,19 +194,11 @@ void process()
   channelSwitch.update(&toggleChannel);
   cabSwitch.update(&toggleCab);
  
-  int v = analogRead(A1);
+  int v = analogRead(REVERB_LEVEL);
   dial = v / 1023.0;
 
   set_parameters();
      
-  //   Serial.printf("Input Peak: %f, Cab Peak: %f, Ouput Peak: %f, Delay Peak: %f, Reverb Peak: %f\n", 
-  //   input_peak.read(),
-  //   cab_peak.read(),
-  //   output_peak.read(),
-  //   delay_peak.read(),
-  //   reverb_peak.read());
-  //   delay(500);
-  // }
 }
 
 
